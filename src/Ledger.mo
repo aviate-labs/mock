@@ -1,12 +1,40 @@
+import AccountIdentifier "mo:principal/AccountIdentifier";
+import Buffer "mo:base/Buffer";
+import HashMap "mo:base/HashMap";
 import HashSet "mo:base/TrieSet";
 import Http "mo:http/Http";
+import Nat64 "mo:base/Nat64";
+import Principal "mo:base/Principal";
+import Text "mo:base/Text";
 
 module {
+    // NOTE: do not use in production, this is for testing purposes...
     public actor class Ledger(init : InitPayload) : async LedgerInterface {
+
+        // A simplified state.
+        private let blocks   = Buffer.Buffer<Args.Send>(0);
+        private let balances = HashMap.HashMap<AccountIdentifier, ICPTs>(
+            0, Text.equal, Text.hash,
+        );
+
         public query func account_balance_dfx(
             args : Args.AccountBalance,
         ) : async ICPTs {
-            { e8s = 0; };
+            balance(args.account);
+        };
+
+        private func balance(a : AccountIdentifier) : ICPTs {
+            switch (balances.get(a)) {
+                case (null) { return { e8s = 0 } };
+                case (? b)  { b };
+            };
+        };
+
+        // @test
+        public shared func addTestBalances(
+            test_balances : [(AccountIdentifier, Nat64)],
+        ) : async () {
+            for ((a, n) in test_balances.vals()) balances.put(a, { e8s = n });
         };
 
         public query func get_nodes() : async [CanisterId] {
@@ -26,13 +54,38 @@ module {
         public shared({caller}) func notify_dfx(
             args : Args.NotifyCanister,
         ) : async () {
+            let notify_canister = actor(Principal.toText(args.to_canister)) : NotifyInterface;
+            let block_height = Nat64.toNat(args.block_height);
+            let block = blocks.get(block_height);
+            let notification : TransactionNotification = {
+                to              = args.to_canister;
+                to_subaccount   = args.to_subaccount;
+                from            = caller;
+                memo            = block.memo;
+                from_subaccount = args.from_subaccount;
+                amount          = block.amount;
+                block_height    = args.block_height;
+            };
 
+            // Send notification.
+            ignore notify_canister.transaction_notification(notification);
         };
 
         public shared({caller}) func send_dfx(
             args : Args.Send,
         ) : async BlockHeight {
-            0;
+            let sender = AccountIdentifier.toText(
+                AccountIdentifier.fromPrincipal(caller, args.from_subaccount),
+            );
+            let sender_balance : ICPTs = balance(sender);
+            assert (sender_balance.e8s > args.amount.e8s);
+            balances.put(sender, { e8s = sender_balance.e8s - args.amount.e8s - FEE.e8s });
+            
+            let receiver_balance : ICPTs = balance(args.to);
+            balances.put(args.to, { e8s = receiver_balance.e8s + args.amount.e8s });
+
+            blocks.add(args);
+            return Nat64.fromNat(blocks.size());
         };
     };
 
