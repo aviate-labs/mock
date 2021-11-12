@@ -2,7 +2,7 @@ import HashSet "mo:base/TrieSet";
 import Http "mo:http/Http";
 
 module {
-    actor class Ledger(init : InitPayload) : async LedgerInterface {
+    public actor class Ledger(init : InitPayload) : async LedgerInterface {
         public query func account_balance_dfx(
             args : Args.AccountBalance,
         ) : async ICPTs {
@@ -19,7 +19,7 @@ module {
             {
                 body        = [];
                 headers     = [];
-                status_code = 404;
+                status_code = Http.Status.NotFound;
             };
         };
 
@@ -39,7 +39,7 @@ module {
     // -------------------------------------------------------------------------
     // | Types                                                                 |
     // -------------------------------------------------------------------------
-    module Args {
+    public module Args {
         public type AccountBalance = {
             account : AccountIdentifier;
         };
@@ -79,6 +79,8 @@ module {
         nanos : Nat32;
     };
 
+    public let FEE : ICPTs = { e8s = 10000 }; // 0.0001 ICP
+
     public type ICPTs = {
         e8s : Nat64;
     };
@@ -91,8 +93,23 @@ module {
         timestamp_nanos : Nat64
     };
 
+    public type TransactionNotification = {
+        to              : Principal;
+        to_subaccount   : ?SubAccount;
+        from            : Principal;
+        memo            : Memo;
+        from_subaccount : ?SubAccount;
+        amount          : ICPTs;
+        block_height    : BlockHeight;
+    };
+
+    public type TransactionResult = {
+        #Ok  : [Nat8];
+        #Err : (Http.StatusCode, Text);
+    };
+
     // -------------------------------------------------------------------------
-    // | Actor Type                                                            |
+    // | Actor Types                                                           |
     // -------------------------------------------------------------------------
 
     public type InitPayload = {
@@ -104,11 +121,15 @@ module {
         send_whitelist         : HashSet.Set<CanisterId>;
     };
 
-    public type LedgerInterface = InitPayload -> actor {
-        account_balance_dfx : shared query Args.AccountBalance -> async ICPTs;
-        get_nodes           : shared query ()                  -> async [CanisterId];
-        http_request        : shared query Http.Request        -> async Http.Response;
-        notify_dfx          : shared Args.NotifyCanister       -> async ();
-        send_dfx            : shared Args.Send                 -> async BlockHeight;
+    public type LedgerInterface = actor {
+        account_balance_dfx : query Args.AccountBalance  -> async ICPTs;
+        get_nodes           : query ()                   -> async [CanisterId];
+        http_request        : query Http.Request         -> async Http.Response;
+        notify_dfx          : shared Args.NotifyCanister -> async ();
+        send_dfx            : shared Args.Send           -> async BlockHeight;
+    };
+
+    public type NotifyInterface = actor {
+        transaction_notification : query TransactionNotification -> async TransactionResult;
     };
 };

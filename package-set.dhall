@@ -3,7 +3,7 @@ let upstream = https://github.com/aviate-labs/package-set/releases/download/v0.1
 let additions = [
    { name = "http"
    , repo = "https://github.com/aviate-labs/http.mo"
-   , version = "v0.0.1"
+   , version = "v0.0.2"
    , dependencies = [ "base" ]
    }
 ]
